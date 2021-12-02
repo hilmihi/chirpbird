@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/hilmihi/chirpbird/adapter"
 	"github.com/rs/cors"
 )
 
@@ -30,6 +31,13 @@ func main() {
 	port := "8080"
 
 	mux := http.NewServeMux()
+
+	//open db connection
+	adapter.Open()
+
+	if adapter.IsOpen() {
+		log.Println("db: connection is already opened")
+	}
 
 	mux.Handle("/room",
 		http.StripPrefix("/room", http.FileServer(http.Dir("./client"))),

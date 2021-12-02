@@ -3,11 +3,9 @@ package adapter
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"time"
 
-	ms "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -32,16 +30,6 @@ type adapter struct {
 	txTimeout         time.Duration
 }
 
-type configType struct {
-	ms.Config
-	DSN             string `json:"dsn,omitempty"`
-	Database        string `json:"database,omitempty"`
-	MaxOpenConns    int    `json:"max_open_conns,omitempty"`
-	MaxIdleConns    int    `json:"max_idle_conns,omitempty"`
-	ConnMaxLifetime int    `json:"conn_max_lifetime,omitempty"`
-	SqlTimeout      int    `json:"sql_timeout,omitempty"`
-}
-
 type User struct {
 	ID         int64     `json:"id"`
 	Username   string    `json:"username"`
@@ -60,54 +48,19 @@ func (a *adapter) getContext() (context.Context, context.CancelFunc) {
 	return context.Background(), nil
 }
 
-// Open initializes database session
-func (a *adapter) Open(jsonconfig json.RawMessage) error {
+// Open initializes database
+func (a *adapter) Open() error {
 	if a.db != nil {
 		return errors.New("mysql adapter is already connected")
 	}
 
-	if len(jsonconfig) < 2 {
-		return errors.New("adapter mysql missing config")
-	}
-
 	var err error
-	defaultCfg := ms.NewConfig()
-	config := configType{Config: *defaultCfg}
-	if err = json.Unmarshal(jsonconfig, &config); err != nil {
-		return errors.New("mysql adapter failed to parse config: " + err.Error())
-	}
 
-	if dsn := config.FormatDSN(); dsn != defaultCfg.FormatDSN() {
-		// MySql config is specified. Use it.
-		a.dbName = config.DBName
-		a.dsn = dsn
-		if config.DSN != "" || config.Database != "" {
-			return errors.New("mysql config: `dsn` and `database` fields are deprecated. Please, specify individual connection settings via mysql.Config: https://pkg.go.dev/github.com/go-sql-driver/mysql#Config")
-		}
-	} else {
-		// Otherwise, use DSN and Database to configure database connection.
-		// Note: this method is deprecated.
-		if config.DSN != "" {
-			a.dsn = config.DSN
-		} else {
-			a.dsn = defaultDSN
-		}
-		a.dbName = config.Database
-	}
+	a.dsn = defaultDSN
+	a.dbName = defaultDatabase
+	a.maxResults = defaultMaxResults
+	a.maxMessageResults = defaultMaxMessageResults
 
-	if a.dbName == "" {
-		a.dbName = defaultDatabase
-	}
-
-	if a.maxResults <= 0 {
-		a.maxResults = defaultMaxResults
-	}
-
-	if a.maxMessageResults <= 0 {
-		a.maxMessageResults = defaultMaxMessageResults
-	}
-
-	// This just initializes the driver but does not open the network connection.
 	a.db, err = sqlx.Open("mysql", a.dsn)
 	if err != nil {
 		return err
@@ -117,25 +70,20 @@ func (a *adapter) Open(jsonconfig json.RawMessage) error {
 	err = a.db.Ping()
 
 	if err == nil {
-		if config.MaxOpenConns > 0 {
-			a.db.SetMaxOpenConns(config.MaxOpenConns)
-		}
-		if config.MaxIdleConns > 0 {
-			a.db.SetMaxIdleConns(config.MaxIdleConns)
-		}
-		if config.ConnMaxLifetime > 0 {
-			a.db.SetConnMaxLifetime(time.Duration(config.ConnMaxLifetime) * time.Second)
-		}
-		if config.SqlTimeout > 0 {
-			a.sqlTimeout = time.Duration(config.SqlTimeout) * time.Second
-			// We allocate txTimeoutMultiplier times sqlTimeout for transactions.
-			a.txTimeout = time.Duration(float64(config.SqlTimeout)*txTimeoutMultiplier) * time.Second
-		}
+		a.db.SetMaxOpenConns(64)
+		a.db.SetMaxIdleConns(64)
+		a.db.SetConnMaxLifetime(time.Duration(60) * time.Second)
+		a.sqlTimeout = time.Duration(10) * time.Second
+		a.txTimeout = time.Duration(float64(10)*txTimeoutMultiplier) * time.Second
 	}
+
 	return err
 }
 
-// Close closes the underlying database connection
+func (a *adapter) IsOpen() bool {
+	return a.db != nil
+}
+
 func (a *adapter) Close() error {
 	var err error
 	if a.db != nil {
@@ -158,7 +106,6 @@ func (a *adapter) UserGet(username string) (*User, error) {
 	}
 
 	if err == sql.ErrNoRows {
-		// Clear the error if user does not exist or marked as soft-deleted.
 		return nil, nil
 	}
 
