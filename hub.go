@@ -6,9 +6,8 @@ type message struct {
 }
 
 type subscription struct {
-	conn     *connection
-	room     string
-	username string
+	conn *connection
+	room string
 }
 
 // hub maintains the set of active connections and broadcasts messages to the

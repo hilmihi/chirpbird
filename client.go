@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	guuid "github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hilmihi/chirpbird/adapter"
 )
 
 const (
@@ -22,6 +24,8 @@ const (
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
 )
+
+var c *connection
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -56,7 +60,6 @@ func (s subscription) readPump() {
 			}
 			break
 		}
-		log.Println(string(msg[:]))
 		s.dispatchRaw(msg)
 	}
 }
@@ -108,12 +111,12 @@ func (s *subscription) dispatchRaw(raw []byte) {
 func (s *subscription) dispatch(msg *ClientComMessage) {
 	switch {
 	case msg.Flag == "channel-join":
-		for i, s := range listChannel {
-			if s.ID == msg.Channel.Channel_id {
-				listChannel[i].Participants++
-				msg.Participants = listChannel[i].Participants
-			}
+		msgs, err := adapter.MessageByRoom(msg.Room.Name)
+		if err != nil {
+			log.Println(err)
 		}
+
+		msg.MessageB = msgs
 
 		msgBc, err := json.Marshal(msg)
 		if err != nil {
@@ -123,6 +126,89 @@ func (s *subscription) dispatch(msg *ClientComMessage) {
 		m := message{msgBc, s.room}
 		h.broadcast <- m
 	case msg.Flag == "message":
+		var status_save bool = false
+		msgs, err := adapter.MessageByRoom(msg.Room.Name)
+		if err != nil {
+			log.Println(err)
+		} else {
+			var seq int = len(msgs) + 1
+			messag := &adapter.Message{
+				CreateDate: time.Now().UTC().Round(time.Millisecond),
+				UpdateDate: time.Now().UTC().Round(time.Millisecond),
+				Seqid:      int64(seq),
+				Room:       msg.Room.Name,
+				From:       msg.ID,
+				Content:    msg.MessageC.Content,
+			}
+			err := adapter.SaveMessage(messag)
+
+			if err == nil {
+				status_save = true
+			}
+		}
+
+		if status_save {
+			msgBc, err := json.Marshal(msg)
+			if err != nil {
+				log.Println(err.Error())
+				return
+			}
+			m := message{msgBc, msg.Room.Name}
+			h.broadcast <- m
+		}
+	case msg.Flag == "find-user":
+		users, err := adapter.FindUsers(msg.Text, msg.ID)
+		if err != nil {
+			log.Println(err)
+		}
+
+		msg.Users = users
+
+		msgBc, err := json.Marshal(msg)
+		if err != nil {
+			log.Println(err.Error())
+			return
+		}
+		m := message{msgBc, s.room}
+		h.broadcast <- m
+	case msg.Flag == "create-room":
+		initiator := &adapter.Subscription{
+			CreateDate: time.Now().UTC().Round(time.Millisecond),
+			UpdateDate: time.Now().UTC().Round(time.Millisecond),
+			UserID:     msg.ID,
+		}
+
+		room := &adapter.Room{
+			CreateDate: time.Now().UTC().Round(time.Millisecond),
+			UpdateDate: time.Now().UTC().Round(time.Millisecond),
+			Name:       guuid.New().String(),
+			Public:     msg.Room.Public,
+		}
+
+		rm, err := adapter.RoomCreate(room)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		room, err = adapter.RoomGetByID(rm)
+
+		initiator.Room = room.Name
+		err = adapter.RoomCreateP2P(initiator, msg.Users)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
+		subs, err := adapter.SubsByUser(msg.ID)
+		if err != nil {
+			log.Println(err)
+		}
+
+		msg.Subscriptions = subs
+		msg.Flag = "get-channel"
+		msg.Room = nil
+		msg.Users = nil
+
 		msgBc, err := json.Marshal(msg)
 		if err != nil {
 			log.Println(err.Error())
@@ -138,15 +224,25 @@ func (s *subscription) dispatch(msg *ClientComMessage) {
 }
 
 // serveWs handles websocket requests from the peer.
-func serveWs(w http.ResponseWriter, r *http.Request, roomId string, username string) {
+func serveWs(w http.ResponseWriter, r *http.Request, roomId string, subs []adapter.Subscription) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
-	c := &connection{send: make(chan []byte, 256), ws: ws}
-	s := subscription{c, roomId, username}
+	c = &connection{send: make(chan []byte, 256), ws: ws}
+
+	s := subscription{c, roomId}
 	h.register <- s
 	go s.writePump()
 	go s.readPump()
+
+	subsChannel(subs)
+}
+
+func subsChannel(subs []adapter.Subscription) {
+	for _, sub := range subs {
+		s := subscription{c, sub.Room}
+		h.register <- s
+	}
 }
