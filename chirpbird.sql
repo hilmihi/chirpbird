@@ -36,7 +36,7 @@ CREATE TABLE `messages` (
   `updatedate` datetime(3) NOT NULL,
   `deletedate` datetime(3) DEFAULT NULL,
   `seqid` int(11) NOT NULL,
-  `room` char(25) NOT NULL,
+  `room` varchar(36) NOT NULL,
   `from` bigint(20) NOT NULL,
   `content` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`content`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -80,7 +80,7 @@ CREATE TABLE `rooms` (
   `id` int(11) NOT NULL,
   `createdate` datetime(3) NOT NULL,
   `updatedate` datetime(3) NOT NULL,
-  `name` char(25) NOT NULL,
+  `name` varchar(36) NOT NULL,
   `owner` int(11) NOT NULL DEFAULT 0,
   `seqid` int(11) NOT NULL DEFAULT 0,
   `public` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`public`)),
@@ -113,7 +113,7 @@ CREATE TABLE `subscriptions` (
   `updatedate` datetime(3) NOT NULL,
   `deletedate` datetime(3) DEFAULT NULL,
   `userid` int(11) NOT NULL,
-  `room` char(25) NOT NULL,
+  `room` varchar(36) NOT NULL,
   `seqid` int(11) DEFAULT 0,
   `comment` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`comment`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

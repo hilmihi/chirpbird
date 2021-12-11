@@ -39,10 +39,6 @@ func main() {
 		log.Println("db: connection is already opened")
 	}
 
-	mux.Handle("/room",
-		http.StripPrefix("/room", http.FileServer(http.Dir("./client"))),
-	)
-
 	mux.HandleFunc("/getChannels", func(w http.ResponseWriter, r *http.Request) {
 		//get username from param URL
 		paramsUsername, okUsername := r.URL.Query()["username"]
@@ -166,7 +162,6 @@ type ClientComMessage struct {
 	Channel_id    int64                  `json:"channel_id"`
 	Flag          string                 `json:"flag"`
 	Username      string                 `json:"username"`
-	Participants  int64                  `json:"participants"`
 	Text          string                 `json:"text"`
 	MessageB      []adapter.Message      `json:"messageb"`
 	MessageC      *Message               `json:"messagec"`

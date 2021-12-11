@@ -112,7 +112,7 @@ export class Chat extends React.Component {
             return c.id === id;
         });
         this.setState({ channel });
-        this.conn.send(JSON.stringify({ flag: "channel-join", channel_id: channel.id, room: {name: channel.room}, channel: {channel_id: channel.id, id: Date.now()} }));
+        this.conn.send(JSON.stringify({ flag: "channel-join", channel_id: channel.id, room: {name: channel.room}}));
     }
 
     handleSendMessage = (channel_id, text) => {
@@ -120,7 +120,7 @@ export class Chat extends React.Component {
             return c.id === channel_id;
         });
         //ID is userid
-        this.conn.send(JSON.stringify({ flag: "message", id: parseInt(this.state.id), channel_id: channel_id, room: {name: channel.room}, messagec: {room: channel.room, content: text, username: this.state.username}}));
+        this.conn.send(JSON.stringify({ flag: "message", id: parseInt(this.state.id), channel_id: channel_id, room: {name: channel.room}, messagec: {content: text, username: this.state.username}}));
     }
 
     showModal = () => {
